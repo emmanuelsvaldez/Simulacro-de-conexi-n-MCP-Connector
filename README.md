@@ -59,3 +59,22 @@ pytest -v test_novamart_mcp.py
 
 ## 📑 Entregable Principal
 Consulta el archivo **[`ENTREGABLE_SIMULACRO_NOVAMART.md`](ENTREGABLE_SIMULACRO_NOVAMART.md)** para copiar el formato final requerido para la entrega en la plataforma del Bootcamp o evaluación por IA.
+
+---
+
+## 📸 Evidencias de Ejecución (Capturas de Pantalla)
+
+A continuación se presentan las evidencias de validación en terminal y evaluación con IA:
+
+### 1. Ejecución Completa del Simulador
+Validación de los 4 casos oficiales de negocio en terminal sin errores de encoding.
+![01: Ejecución Completa del Simulador](docs/img/01_simulador_ejecucion_completa.png)
+
+### 2. Pruebas Unitarias Automatizadas con Pytest (5/5 PASS)
+Ejecución de la suite automatizada certificando contratos MCP y reglas de negocio en 0.03s.
+![02: Pruebas Pytest](docs/img/06_pruebas_pytest_5_pass.png)
+
+### 3. Evaluación Oficial con la Rúbrica del Instructor (100 / 100)
+Resultado del prompt evaluador asignando la calificación perfecta según los 6 criterios.
+![03: Evaluación Rúbrica 100/100](docs/img/07_evaluacion_rubrica_100.png)
+
