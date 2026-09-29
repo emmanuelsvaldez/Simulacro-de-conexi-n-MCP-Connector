@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Suite de Pruebas Automatizadas: Simulacro MCP Connector NovaMart
+Suite de Pruebas Automatizadas: Simulacro MCP Connector NovaMart (Versión 100/100)
 Bootcamp SKALA - Inteligencia Artificial & Agentes Enterprise
-Valida los 6 criterios de la rúbrica oficial (100 puntos).
+Instructor: M. C. Fernando Morquecho | Alumno: Emmanuel Sánchez
+
+Valida el 100% de los criterios de la rúbrica y los casos límite identificados:
+- Descubrimiento inicial tools/list (JSON-RPC 2.0)
+- Consulta sin alucinaciones (tracking: null)
+- Flujo de rastreo con dato faltante resuelto en Turno 2
+- Cancelación en dos fases con confirmación
+- Aborto seguro cuando el usuario no confirma
+- Rechazo de cancelación en tránsito (ORD-1002) y entregado (ORD-1003)
+- Manejo de formato inválido y pedido inexistente (ORD-9999)
+- Resiliencia ante falla técnica/timeout de servidor MCP
 """
 
 import pytest
@@ -17,64 +27,139 @@ def entorno_novamart():
     return servidor, agente
 
 
-def test_caso_1_consultar_pedido_ord1001(entorno_novamart):
-    """Prueba 1: Consulta de estado de pedido ORD-1001."""
-    _, agente = entorno_novamart
-    tool_name, resultado, respuesta = agente.procesar_mensaje("Quiero saber el estado de mi pedido ORD-1001.")
+def test_01_descubrimiento_tools_list(entorno_novamart):
+    """Paso 0: Valida que el servidor MCP exponga el catálogo oficial de 4 herramientas."""
+    servidor, agente = entorno_novamart
+    catalogo = servidor.tools_list()
     
-    assert "consultar_pedido" in tool_name
-    assert resultado is not None
-    assert resultado["order_id"] == "ORD-1001"
-    assert resultado["status"] == "En preparación"
-    assert "preparación" in respuesta
+    assert catalogo["jsonrpc"] == "2.0"
+    nombres_tools = [t["name"] for t in catalogo["result"]["tools"]]
+    assert "consultar_pedido" in nombres_tools
+    assert "rastrear_envio" in nombres_tools
+    assert "validar_cancelacion" in nombres_tools
+    assert "cancelar_pedido" in nombres_tools
+    assert len(agente.catalogo_herramientas) == 4
 
 
-def test_caso_2_dato_faltante_sin_herramientas(entorno_novamart):
-    """Prueba 2: Manejo de dato faltante sin inventar información."""
+def test_02_consulta_ord1001_sin_alucinacion(entorno_novamart):
+    """Prueba 1: Consulta de estado con JSON que incluye tracking: null sin alucinar."""
     _, agente = entorno_novamart
-    tool_name, resultado, respuesta = agente.procesar_mensaje("Quiero rastrear mi pedido.")
+    tool, res, resp = agente.procesar_mensaje("Quiero saber el estado de mi pedido ORD-1001.")
     
-    # No debe llamar ninguna herramienta al carecer de identificador
-    assert tool_name == "Ninguna todavía"
-    assert resultado is None
-    assert "¿Me compartes tu número de pedido?" in respuesta
+    assert "consultar_pedido" in tool
+    assert res["order_id"] == "ORD-1001"
+    assert res["status"] == "En preparación"
+    assert res["tracking"] is None
+    assert "preparación" in resp
+    assert "todavía no tiene guía de envío asignada" in resp
 
 
-def test_caso_3_cancelacion_en_dos_fases_ord1004(entorno_novamart):
+def test_03_rastreo_dato_faltante_y_resolucion_turno2(entorno_novamart):
+    """Prueba 2: Manejo de dato faltante en Turno 1 y resolución con rastrear_envio en Turno 2."""
+    _, agente = entorno_novamart
+    
+    # Turno 1: Usuario pide rastrear sin ID
+    tool_t1, res_t1, resp_t1 = agente.procesar_mensaje("Quiero rastrear mi pedido.")
+    assert tool_t1 == "Ninguna todavía"
+    assert res_t1 is None
+    assert "¿Me compartes tu número de pedido?" in resp_t1
+    assert agente.contexto_rastreo_pendiente is True
+    
+    # Turno 2: Usuario proporciona ID -> Invoca rastrear_envio
+    tool_t2, res_t2, resp_t2 = agente.procesar_mensaje("Es ORD-1002.")
+    assert "rastrear_envio" in tool_t2
+    assert res_t2["order_id"] == "ORD-1002"
+    assert "Tijuana" in res_t2["ubicacion_actual"]
+    assert "Tijuana" in resp_t2
+    assert agente.contexto_rastreo_pendiente is False
+
+
+def test_04_cancelacion_confirmada_ord1004(entorno_novamart):
     """Prueba 3: Cancelación en 2 fases con confirmación explícita (Human-in-the-Loop)."""
     _, agente = entorno_novamart
     
-    # Fase 1: Solicitud inicial
-    tool_fase1, res_fase1, resp_fase1 = agente.procesar_mensaje("Quiero cancelar el pedido ORD-1004.")
-    assert "validar_cancelacion" in tool_fase1
-    assert res_fase1["can_cancel"] is True
-    assert "¿Confirmas que deseas cancelarlo?" in resp_fase1
+    # Fase 1: Validación
+    tool_f1, res_f1, resp_f1 = agente.procesar_mensaje("Quiero cancelar el pedido ORD-1004.")
+    assert "validar_cancelacion" in tool_f1
+    assert res_f1["can_cancel"] is True
+    assert "¿Confirmas que deseas cancelar ORD-1004?" in resp_f1
+    assert agente.contexto_cancelacion_pendiente == "ORD-1004"
     
-    # Fase 2: Confirmación explícita
-    tool_fase2, res_fase2, resp_fase2 = agente.procesar_mensaje("Sí, confirmo.")
-    assert "cancelar_pedido" in tool_fase2
-    assert res_fase2["cancelled"] is True
-    assert "cancelado correctamente" in resp_fase2
+    # Fase 2: Confirmación afirmativa
+    tool_f2, res_f2, resp_f2 = agente.procesar_mensaje("Sí, confirmo.")
+    assert "cancelar_pedido" in tool_f2
+    assert res_f2["cancelled"] is True
+    assert "cancelado correctamente" in resp_f2
+    assert agente.contexto_cancelacion_pendiente is None
 
 
-def test_caso_4_error_controlado_en_transito_ord1002(entorno_novamart):
-    """Prueba 4: Control de caso no permitido (pedido en tránsito no cancelable)."""
+def test_05_cancelacion_aborto_usuario_dice_no(entorno_novamart):
+    """Prueba 3b: Aborto seguro cuando el usuario no confirma la cancelación."""
     servidor, agente = entorno_novamart
-    tool_name, resultado, respuesta = agente.procesar_mensaje("Cancela mi pedido ORD-1002.")
     
-    assert "validar_cancelacion" in tool_name
-    assert resultado["can_cancel"] is False
-    assert "en tránsito" in resultado["reason"].lower()
-    # Verifica que el agente NO llamó a cancelar_pedido y comunicó el rechazo
-    assert "No puedo cancelar el pedido ORD-1002 porque ya está en tránsito" in respuesta
+    # Fase 1: Validación
+    agente.procesar_mensaje("Quiero cancelar el pedido ORD-1001.")
+    assert agente.contexto_cancelacion_pendiente == "ORD-1001"
+    
+    # Fase 2: Rechazo del usuario
+    tool_f2, res_f2, resp_f2 = agente.procesar_mensaje("Mmm, mejor no.")
+    assert tool_f2 == "Ninguna"
+    assert res_f2 is None
+    assert "no cancelé el pedido ORD-1001; sigue activo" in resp_f2
+    assert servidor.pedidos["ORD-1001"]["status"] == "En preparación"
+    assert agente.contexto_cancelacion_pendiente is None
+
+
+def test_06_error_controlado_en_transito_ord1002(entorno_novamart):
+    """Caso no permitido: Pedido en tránsito no puede cancelarse."""
+    servidor, agente = entorno_novamart
+    tool, res, resp = agente.procesar_mensaje("Cancela mi pedido ORD-1002.")
+    
+    assert "validar_cancelacion" in tool
+    assert res["can_cancel"] is False
+    assert "No es posible cancelar ORD-1002 porque ya está en tránsito" in resp
+    assert "¿Quieres que lo rastree?" in resp
     assert servidor.pedidos["ORD-1002"]["status"] == "En tránsito"
 
 
-def test_rastreo_envio_ubicacion(entorno_novamart):
-    """Prueba complementaria: Rastrear envío de pedido ORD-1002."""
-    _, agente = entorno_novamart
-    tool_name, resultado, respuesta = agente.procesar_mensaje("¿Dónde está mi paquete ORD-1002?")
+def test_07_error_controlado_entregado_ord1003(entorno_novamart):
+    """Caso no permitido: Pedido entregado no puede cancelarse y ofrece atención a clientes."""
+    servidor, agente = entorno_novamart
+    tool, res, resp = agente.procesar_mensaje("Cancela mi pedido ORD-1003.")
     
-    assert "rastrear_envio" in tool_name
-    assert "Tijuana" in resultado["ubicacion_actual"]
-    assert "Tijuana" in respuesta
+    assert "validar_cancelacion" in tool
+    assert res["can_cancel"] is False
+    assert "ya fue entregado, por lo que no puede cancelarse" in resp
+    assert "atención a clientes" in resp
+    assert servidor.pedidos["ORD-1003"]["status"] == "Entregado"
+
+
+def test_08_control_formato_invalido(entorno_novamart):
+    """Caso límite: Formato inválido ('pedido 55') es rechazado por regex."""
+    _, agente = entorno_novamart
+    tool, res, resp = agente.procesar_mensaje("Quiero ver mi pedido 55.")
+    
+    assert tool == "Ninguna"
+    assert res is None
+    assert "El número de pedido debe tener el formato ORD-####" in resp
+
+
+def test_09_id_inexistente_ord9999(entorno_novamart):
+    """Caso de error de negocio: Pedido inexistente ORD-9999."""
+    _, agente = entorno_novamart
+    tool, res, resp = agente.procesar_mensaje("Consulta el pedido ORD-9999.")
+    
+    assert "consultar_pedido" in tool
+    assert res["error"] == "ORDER_NOT_FOUND"
+    assert "No encontré el pedido ORD-9999" in resp
+
+
+def test_10_resiliencia_servidor_mcp_caido():
+    """Caso de falla técnica: Servidor MCP no responde (timeout 503)."""
+    servidor_caido = ServidorMCPNovaMart(simular_timeout=True)
+    agente = AgenteNovaMart(servidor_caido)
+    
+    tool, res, resp = agente.procesar_mensaje("Consulta el pedido ORD-1001.")
+    assert res["error"] == "MCP_TIMEOUT"
+    assert "No pude consultar el sistema de pedidos en este momento" in resp
+    assert "no tomé ninguna acción" in resp

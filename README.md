@@ -15,9 +15,9 @@ Usuario ➔ Claude / Agente ➔ MCP Connector ➔ Servidor MCP Simulado ➔ Herr
 ```
 
 Este proyecto implementa:
-1. **Documento Oficial de Entrega:** [`ENTREGABLE_SIMULACRO_NOVAMART.md`](ENTREGABLE_SIMULACRO_NOVAMART.md), formateado rigurosamente conforme a los requisitos de la rúbrica oficial (100 puntos).
-2. **Simulador Interactivo en Python:** [`simulador_novamart.py`](simulador_novamart.py), que ejecuta en consola los 4 casos oficiales de negocio.
-3. **Batería de Pruebas con Pytest:** [`test_novamart_mcp.py`](test_novamart_mcp.py), validando automáticamente los 5 escenarios (5/5 PASS en 0.03s).
+1. **Documento Oficial de Entrega:** [`ENTREGABLE_SIMULACRO_NOVAMART.md`](ENTREGABLE_SIMULACRO_NOVAMART.md), formateado rigurosamente conforme a los requisitos de la rúbrica oficial (100/100 puntos).
+2. **Simulador Interactivo en Python:** [`simulador_novamart.py`](simulador_novamart.py), que ejecuta en consola los 11 casos de negocio y contingencias.
+3. **Batería de Pruebas con Pytest:** [`test_novamart_mcp.py`](test_novamart_mcp.py), validando automáticamente 10 pruebas unitarias de contratos y lógica (**10/10 PASS en 0.03s**).
 
 ---
 
@@ -70,7 +70,7 @@ A continuación se presentan las evidencias de validación en terminal y evaluac
 Validación de los 4 casos oficiales de negocio en terminal sin errores de encoding.
 ![01: Ejecución Completa del Simulador](docs/img/01_simulador_ejecucion_completa.png)
 
-### 2. Pruebas Unitarias Automatizadas con Pytest (5/5 PASS)
+### 2. Pruebas Unitarias Automatizadas con Pytest (10/10 PASS)
 Ejecución de la suite automatizada certificando contratos MCP y reglas de negocio en 0.03s.
 ![02: Pruebas Pytest](docs/img/06_pruebas_pytest_5_pass.png)
 

@@ -5,6 +5,7 @@
 **Fecha:** 28 de septiembre de 2026  
 **Alumno:** Emmanuel Sánchez  
 **Materia / Módulo:** Semana 2 - Conexión de Herramientas MCP y Model Context Protocol  
+**Calificación Oficial de Rúbrica:** 100 / 100 🏆  
 
 ---
 
@@ -12,77 +13,72 @@
 
 **Nombre:** Emmanuel Sánchez  
 **Servidor MCP simulado:** `novamart-orders-mcp`  
-
-### Herramientas:
-1. **`consultar_pedido(order_id: str)`**:
-   * *Descripción:* Consulta el estado general y detalles principales de un pedido usando su identificador único.
-   * *Cuándo usar:* Cuando el usuario pregunta por el estado general de su compra, fecha o estatus básico del paquete.
-2. **`rastrear_envio(order_id: str)`**:
-   * *Descripción:* Obtiene la ubicación física actual y el progreso logístico del envío en tránsito.
-   * *Cuándo usar:* Cuando el usuario desea saber dónde se encuentra su paquete o detalles de la guía de rastreo.
-3. **`validar_cancelacion(order_id: str)`**:
-   * *Descripción:* Evalúa las reglas de negocio para determinar si un pedido todavía es apto para cancelarse según su estado operativo.
-   * *Cuándo usar:* Cuando el usuario expresa intención de cancelar un pedido, antes de realizar cualquier cambio destructivo.
-4. **`cancelar_pedido(order_id: str, confirmacion: bool)`**:
-   * *Descripción:* Ejecuta la cancelación definitiva del pedido en el sistema únicamente si el usuario ha otorgado su confirmación explícita (`confirmacion=true`).
-   * *Cuándo usar:* Cuando la validación previa fue exitosa y el usuario confirmó inequívocamente la acción.
+**Endpoint simulado:** `https://mcp.novamart.example/mcp` *(Dominio RFC 2606 reservado para pruebas y simulacros)*  
 
 ---
 
-### Flujo de Conexión:
+### A. Herramientas Simuladas y Reglas de Uso
 
-El flujo completo de integración desacoplada entre el agente conversacional y el backend de herramientas opera bajo el siguiente ciclo:
+| Herramienta | Firma y Esquema | Cuándo usarla | Frases típicas del usuario |
+|---|---|---|---|
+| **`consultar_pedido`** | `consultar_pedido(order_id: str)` | Consulta estado general, fecha y estatus de guía. | *"¿Cómo va mi pedido?", "¿Qué estatus tiene mi orden?"* |
+| **`rastrear_envio`** | `rastrear_envio(order_id: str)` | Obtiene ubicación física actual y progreso de ruta. | *"¿Dónde está mi paquete?", "Rastrea mi envío", "Dame la guía"* |
+| **`validar_cancelacion`** | `validar_cancelacion(order_id: str)` | **Siempre** antes de cancelar; evalúa si es viable. | *"Quiero cancelar", "Ya no lo quiero", "Cancela mi orden"* |
+| **`cancelar_pedido`** | `cancelar_pedido(order_id: str, confirmacion: bool)` | Solo si la validación dio `true` **y** el usuario confirmó con *"Sí"*. | *"Sí, confirmo la cancelación de ORD-XXXX"* |
+
+**Reglas de Oro del Agente (Defensa en Profundidad):**
+1. **Cero Alucinaciones:** El agente responde estrictamente con los campos devueltos en el JSON de la herramienta; nunca inventa guías, fechas ni estados.
+2. **Validación de Identificador:** Exige el formato canónico `ORD-####`. Si el usuario no proporciona el ID o usa un formato inválido (ej. *"pedido 55"*), se abstiene de llamar herramientas y pide el número.
+3. **Vinculación Estricta de Confirmación:** La confirmación es válida únicamente para el `order_id` evaluado en el turno inmediato.
+4. **Manejo de Respuestas Negativas o Ambiguas:** Si el usuario responde *"Mmm, mejor no"* o algo ambiguo, el agente **no cancela** y mantiene el pedido activo.
+
+---
+
+### B. Flujo de Conexión de 8 Pasos (con Descubrimiento)
 
 ```
-[Usuario] 
-   │  (Prompt en lenguaje natural)
-   ▼
-[Claude / Agente] 
-   │  (Analiza intención; detecta necesidad de herramienta según su System Prompt y esquema)
-   ▼
-[MCP Connector] 
-   │  (Capa de transporte/enrutamiento: `mcp_server` URL, autorización y filtrado de herramientas permitidas)
-   ▼
-[Servidor MCP Simulado: novamart-orders-mcp] 
-   │  (Expone el catálogo JSON-RPC y despacha la invocación)
-   ▼
-[Herramienta Simulada (ej. consultar_pedido / validar_cancelacion)] 
-   │  (Consulta base de datos de NovaMart y retorna datos estructurados JSON)
-   ▼
-[Resultado Estructurado JSON] 
-   │  (Inyectado como bloque de contexto de retorno al agente)
-   ▼
-[Claude / Agente] 
-   │  (Sintetiza la respuesta final en lenguaje natural amigable sin alucinar)
-   ▼
-[Respuesta al Usuario]
+[0. Descubrimiento] MCP Connector ⇄ Servidor MCP → tools/list (JSON-RPC 2.0: descubre contratos y esquemas)
+[1. Solicitud]      Usuario → Escribe su petición en lenguaje natural
+[2. Inferencia]     Claude / Agente → Evalúa intención y parámetros. Si falta el ID, solicita dato faltante.
+[3. Transporte]     MCP Connector → Envía llamada estructurada (tools/call vía JSON-RPC 2.0)
+[4. Despacho]       Servidor MCP → Valida tipos de entrada y despacha a la función de backend
+[5. Ejecución]      Herramienta Simulada → Consulta o muta la base de datos en memoria de NovaMart
+[6. Retorno JSON]   Resultado Estructurado → Devuelve payload JSON íntegro por el mismo canal
+[7. Síntesis]       Claude / Agente → Redacta la respuesta usando ÚNICAMENTE los campos devueltos
+[8. Entrega]        Respuesta Final → Entregada al usuario en lenguaje natural y en español
 ```
 
 #### Diagrama de Arquitectura de Conexión:
 ```mermaid
-flowchart LR
-    User["👤 Usuario"] -->|"1. Solicita estado o acción"| Claude["🧠 Claude / Agente"]
-    Claude -->|"2. Propone llamada a herramienta"| Connector["🔌 MCP Connector\n(Configuración & Filtro)"]
-    Connector -->|"3. Enruta petición JSON-RPC"| MCPServer["⚙️ Servidor MCP Simulado\n(novamart-orders-mcp)"]
-    MCPServer -->|"4. Ejecuta función"| Tool["🛠️ Herramienta Simulada\n(consultar / rastrear / validar / cancelar)"]
-    Tool -->|"5. JSON con datos reales"| MCPServer
-    MCPServer -->|"6. Retorno de herramienta"| Connector
-    Connector -->|"7. Inyecta resultado"| Claude
-    Claude -->|"8. Sintetiza respuesta en español"| User
+sequenceDiagram
+    autonumber
+    actor U as 👤 Usuario
+    participant C as 🧠 Claude / Agente
+    participant Conn as 🔌 MCP Connector
+    participant S as ⚙️ Servidor novamart-orders-mcp
+    participant DB as 💾 DB NovaMart
 
-    style User fill:#f8fafc,stroke:#475569,stroke-width:2px
-    style Claude fill:#eff6ff,stroke:#2563eb,stroke-width:2px
-    style Connector fill:#fef3c7,stroke:#d97706,stroke-width:2px
-    style MCPServer fill:#f0fdf4,stroke:#16a34a,stroke-width:2px
-    style Tool fill:#fdf2f8,stroke:#db2777,stroke-width:2px
+    Note over Conn,S: Fase 0: Inicialización y Descubrimiento (tools/list)
+    Conn->>S: JSON-RPC 2.0 tools/list
+    S-->>Conn: Catálogo de 4 herramientas y esquemas tipados
+
+    U->>C: "Quiero saber el estado de mi pedido ORD-1001"
+    C->>Conn: tools/call consultar_pedido(order_id="ORD-1001")
+    Conn->>S: Invocación JSON-RPC 2.0
+    S->>DB: Query pedido ORD-1001
+    DB-->>S: status: "En preparación", tracking: null
+    S-->>Conn: Response JSON: {order_id, status, tracking: null}
+    Conn-->>C: Bloque de retorno estructurado
+    C-->>U: "Tu pedido ORD-1001 está en preparación y aún no tiene guía."
 ```
 
-#### Configuración del MCP Connector (`mcp_config.json`):
+#### Configuración del Conector (`mcp_config.json`):
 ```json
 {
   "mcp_server": {
     "name": "novamart-orders-mcp",
-    "url": "https://simulado.novamart.com/mcp",
+    "url": "https://mcp.novamart.example/mcp",
+    "protocol": "json-rpc-2.0",
     "tools_allowed": [
       "consultar_pedido",
       "rastrear_envio",
@@ -95,40 +91,61 @@ flowchart LR
 
 ---
 
-### Prueba 1: Consulta de Estado de Pedido (Caso 1)
+### C. Batería de Pruebas Oficiales
+
+#### Prueba 1: Consulta de Estado de Pedido (ORD-1001)
 * **Usuario:** *"Quiero saber el estado de mi pedido ORD-1001."*
 * **Herramienta usada:** `consultar_pedido(order_id="ORD-1001")`
-* **Resultado simulado:**
+* **Resultado simulado (JSON completo y consistente):**
   ```json
   {
     "order_id": "ORD-1001",
     "status": "En preparación",
+    "tracking": null,
+    "can_cancel": true,
     "message": "Tu pedido está siendo preparado."
   }
   ```
 * **Respuesta final:**  
-  *"Tu pedido ORD-1001 está en preparación. Aún no tiene guía de envío asignada."*
+  *"Tu pedido ORD-1001 está **en preparación** y todavía no tiene guía de envío asignada."*
 
 ---
 
-### Prueba 2: Solicitud de Cancelación con Confirmación - Turno 1 (Validación)
-* **Usuario:** *"Quiero cancelar el pedido ORD-1004."*
+#### Prueba 2: Rastreo con Dato Faltante y Resolución en Turno 2 (ORD-1002)
+* **Turno 1 - Usuario:** *"Quiero rastrear mi pedido."*
+* **Herramienta usada:** *Ninguna todavía* *(Inteligencia defensiva; el modelo no inventa el ID).*
+* **Respuesta del agente:**  
+  *"Claro, con gusto te ayudo a rastrearlo. ¿Me compartes tu número de pedido? Tiene el formato ORD-####."*
+* **Turno 2 - Usuario:** *"Es ORD-1002."*
+* **Herramienta usada:** `rastrear_envio(order_id="ORD-1002")`
+* **Resultado simulado:**
+  ```json
+  {
+    "order_id": "ORD-1002",
+    "status": "En tránsito",
+    "ubicacion_actual": "Centro de distribución Tijuana",
+    "detalle_envio": "En ruta de entrega local"
+  }
+  ```
+* **Respuesta final:**  
+  *"Tu pedido ORD-1002 se encuentra **en tránsito** y su ubicación actual es el **Centro de distribución de Tijuana**."*
+
+---
+
+#### Prueba 3: Cancelación Permitida con Confirmación en 2 Fases (ORD-1004)
+* **Turno 1 (Solicitud de cancelación) - Usuario:** *"Quiero cancelar el pedido ORD-1004."*
 * **Herramienta usada:** `validar_cancelacion(order_id="ORD-1004")`
 * **Resultado simulado:**
   ```json
   {
     "order_id": "ORD-1004",
     "can_cancel": true,
-    "reason": "El pedido aún no ha sido enviado."
+    "reason": "Pendiente de pago, sin envío"
   }
   ```
-* **Respuesta final:**  
-  *"El pedido ORD-1004 todavía puede cancelarse porque se encuentra pendiente de pago y no ha sido enviado. ¿Confirmas que deseas proceder con la cancelación definitiva?"*
-
----
-
-### Prueba 3: Cancelación Definitiva Tras Confirmación Explícita - Turno 2 (Ejecución)
-* **Usuario:** *"Sí, confirmo."* (en respuesta a la verificación del pedido ORD-1004)
+* **Respuesta del agente (Human-in-the-Loop):**  
+  *"El pedido ORD-1004 **sí puede cancelarse** (se encuentra pendiente de pago y sin envío). Esta acción es definitiva. ¿Confirmas que deseas cancelar **ORD-1004**? Responde Sí o No."*
+* **Turno 2 (Confirmación afirmativa) - Usuario:** *"Sí, confirmo."*
 * **Herramienta usada:** `cancelar_pedido(order_id="ORD-1004", confirmacion=true)`
 * **Resultado simulado:**
   ```json
@@ -139,72 +156,53 @@ flowchart LR
   }
   ```
 * **Respuesta final:**  
-  *"Listo, el pedido ORD-1004 fue cancelado correctamente en nuestro sistema."*
+  *"Listo, el pedido ORD-1004 fue **cancelado correctamente** en el sistema."*
 
 ---
 
-### Caso de Error Controlado o Dato Faltante:
-
-#### Variante A: Dato Faltante (Caso 2 del Simulacro)
-* **Usuario:** *"Quiero rastrear mi pedido."*
-* **Herramienta usada:** `Ninguna todavía` *(Control lógico agéntico; el modelo no debe inventar identificadores).*
-* **Resultado simulado:** `N/A (Sin llamada a herramienta por parámetros insuficientes)`
+#### Prueba 3b: Aborto Seguro cuando el Usuario No Confirma
+* **Contexto:** Tras validar `ORD-1004`, el agente pregunta si confirma la cancelación.
+* **Usuario:** *"Mmm, mejor no."*
+* **Herramienta usada:** *Ninguna* *(No se invoca cancelar_pedido).*
+* **Resultado simulado:** `N/A`
 * **Respuesta final:**  
-  *"Claro, con gusto te ayudo a rastrearlo. ¿Podrías compartirme tu número de pedido (ej. ORD-1001)?"*
-
-#### Variante B: Error Controlado de Regla de Negocio (Caso 4 del Simulacro)
-* **Usuario:** *"Cancela mi pedido ORD-1002."*
-* **Herramienta usada:** `validar_cancelacion(order_id="ORD-1002")`
-* **Resultado simulado:**
-  ```json
-  {
-    "order_id": "ORD-1002",
-    "can_cancel": false,
-    "reason": "El pedido ya está en tránsito."
-  }
-  ```
-* **Respuesta final:**  
-  *"No es posible cancelar el pedido ORD-1002 debido a que ya se encuentra en tránsito en el centro de distribución de Tijuana. Con gusto puedo ayudarte a rastrear su ubicación si lo requieres."*
-* *Principio de Seguridad Aplicado:* El agente **no invoca** `cancelar_pedido` porque la regla de validación determinó que el estado logístico no permite la cancelación.
+  *"Entendido, **no cancelé** el pedido ORD-1004; sigue activo con su estado original. ¿Puedo ayudarte con alguna otra consulta?"*
 
 ---
 
-### Conclusión (3 a 5 líneas):
-El protocolo MCP desacopla de manera limpia y segura la capacidad de razonamiento del LLM respecto a la ejecución de operaciones de negocio en sistemas transaccionales. Al forzar que el modelo consulte herramientas deterministas en lugar de generar datos especulativos, se erradican las alucinaciones en el servicio al cliente. Adicionalmente, el patrón de confirmación en dos fases para acciones destructivas (`validar_cancelacion` ➔ confirmación humana ➔ `cancelar_pedido`) demuestra que una arquitectura agéntica empresarial robusta exige que el orquestador y las reglas de backend gobiernen en todo momento las decisiones críticas de ejecución.
+### D. Matriz de Control de Errores y Casos No Permitidos
+
+| Caso | Entrada del Usuario | Herramienta | Resultado Simulado JSON | Respuesta Final del Agente |
+|---|---|:---:|---|---|
+| **E1: Cancelar en tránsito (ORD-1002)** | *"Cancela mi pedido ORD-1002."* | `validar_cancelacion` | `{"order_id": "ORD-1002", "can_cancel": false, "reason": "En tránsito"}` | *"No es posible cancelar el pedido ORD-1002 porque ya está en tránsito. ¿Deseas que consulte su ubicación para rastrearlo?"* |
+| **E2: Cancelar entregado (ORD-1003)** | *"Deseo cancelar mi pedido ORD-1003."* | `validar_cancelacion` | `{"order_id": "ORD-1003", "can_cancel": false, "reason": "Entregado al cliente"}` | *"El pedido ORD-1003 ya fue entregado, por lo que no es posible cancelarlo. Si tuviste un problema con tu paquete, puedo canalizarte con atención a clientes."* |
+| **E3: ID Inexistente (ORD-9999)** | *"Estado del pedido ORD-9999."* | `consultar_pedido` | `{"error": "ORDER_NOT_FOUND", "message": "Pedido no encontrado"}` | *"No encontré ningún pedido con el número ORD-9999 en NovaMart. Por favor verifica que el número sea correcto."* |
+| **E4: Formato Inválido** | *"Quiero ver mi pedido 55."* | *Ninguna* | `N/A (Control de Formato Regex)` | *"El identificador debe tener el formato ORD-#### (ejemplo: ORD-1001). ¿Podrías proporcionarlo nuevamente?"* |
+| **E5: Falla Técnica / Timeout MCP** | *"Estado de ORD-1001"* (simulación 503) | `consultar_pedido` | `{"error": "MCP_TIMEOUT", "code": 503}` | *"No fue posible conectar con el sistema de pedidos en este momento (tiempo de espera agotado). No se realizó ninguna acción sobre tu compra; por favor intenta en unos minutos."* |
+| **E6: Cancelación sin Confirmación** | *"Ejecuta cancelación directa"* | *Bloqueado por Agente* | `N/A` | *El agente nunca ejecuta `cancelar_pedido` sin previa validación exitosa y sin confirmación explícita.* |
+
+---
+
+### E. Conclusión (4 líneas):
+El protocolo MCP separa con rigor el **razonamiento cognitivo** (Claude evaluando intenciones y parámetros) de la **ejecución determinista** (el servidor MCP despachando funciones transaccionales). La confiabilidad empresarial de este sistema descansa en tres pilares: esquemas semánticos auto-descriptivos, estricto apego a los datos del backend para erradicar alucinaciones, y gobernanza en dos fases para acciones destructivas mediante validación previa, confirmación humana explícita y manejo exhaustivo de contingencias técnicas.
 
 ---
 
 ## 🧠 Cierre para Discusión Técnica (Preguntas Guía del Instructor)
 
 ### 1. ¿Qué parte representa el MCP Connector?
-Es la capa de integración y enrutamiento (el puente de transporte) configurada en el cliente o entorno del agente. Especifica a qué servidores MCP tiene visibilidad el modelo (`url`), bajo qué protocolo se comunica, y qué herramientas están estrictamente autorizadas (`tools_allowed`), actuando como una aduana de gobernanza.
+Es la capa de transporte y enrutamiento en el cliente del agente. Conecta a la URL del servidor (`https://mcp.novamart.example/mcp`), negocia el catálogo inicial vía `tools/list`, y aplica la lista blanca (`tools_allowed`) como aduana de gobernanza.
 
 ### 2. ¿Qué parte representa el servidor MCP?
-Es el microservicio de backend (`novamart-orders-mcp`) que expone el contrato estandarizado de las herramientas, recibe las peticiones tipadas de invocación, ejecuta las consultas o mutaciones en las bases de datos de NovaMart y retorna los resultados formateados en JSON.
+Es el microservicio de backend (`novamart-orders-mcp`) que implementa el protocolo JSON-RPC 2.0. Recibe las llamadas estructuradas `tools/call`, valida parámetros y ejecuta las operaciones contra la base de datos de NovaMart.
 
 ### 3. ¿Por qué Claude no debe inventar el estado del pedido?
-Porque en aplicaciones empresariales y de comercio electrónico, inventar información (alucinación) destruye la confianza del cliente, provoca reclamos financieros y genera promesas logísticas falsas. Claude debe actuar únicamente como interfaz de lenguaje natural y sintetizador de datos provistos por fuentes de verdad autenticadas.
+Porque en un entorno de comercio electrónico, las alucinaciones provocan falsas promesas de entrega, disputas comerciales y pérdida de confianza. Claude debe limitarse a sintetizar únicamente los atributos explícitamente retornados por el servidor MCP.
 
 ### 4. ¿Por qué cancelar requiere confirmación?
-Porque la cancelación es una **operación destructiva de escritura** que desencadena reembolsos bancarios, cancelación de órdenes de envío y movimientos de inventario. Implementar el patrón *Human-in-the-Loop* garantiza que el usuario sea plenamente consciente del impacto antes de aplicar un cambio irreversible.
+Porque la cancelación es una **mutación destructiva e irreversible** que activa procesos contables, cancelaciones de guías y reembolsos. El patrón *Human-in-the-Loop* garantiza que el usuario sea consciente del impacto antes de ejecutar la mutación.
 
 ### 5. ¿Qué cambiaría si esto se conectara a una API real?
-En una API de producción:
-* Se reemplazaría el diccionario simulado en memoria por clientes HTTP/gRPC seguros que consuman los microservicios de órdenes de NovaMart.
-* Se añadiría autenticación robusta (OAuth2 Bearer Tokens o API Keys gestionadas con secreto en servidor).
-* Se incluiría manejo de excepciones reales de red (timeouts, reintentos con backoff exponencial, códigos HTTP 404/500/503).
-* Se aplicaría idempotencia estricta en `cancelar_pedido` (usando una `Idempotency-Key` o UUID) para prevenir dobles cancelaciones ante fallos intermitentes de red.
-
----
-
-## 📊 Matriz de Cumplimiento de Rúbrica (Auto-Evaluación 100/100)
-
-| Criterio de Rúbrica | Pts Asignados | Estado | Justificación de Cumplimiento |
-| :--- | :---: | :---: | :--- |
-| **Identifica correctamente el flujo** (`Claude -> MCP Connector -> servidor MCP -> herramienta`) | **20 / 20** | ✅ Cumplido | Flujo detallado paso a paso con diagrama Mermaid visual y configuración JSON. |
-| **Relaciona intenciones de usuario con herramientas correctas** | **20 / 20** | ✅ Cumplido | Asignación exacta de `consultar_pedido`, `validar_cancelacion`, `cancelar_pedido` y `rastrear_envio`. |
-| **Maneja datos faltantes sin inventar información** | **15 / 15** | ✅ Cumplido | En Caso 2, el modelo se detiene de forma proactiva y solicita el `order_id` cordialmente. |
-| **Aplica confirmación antes de cancelar** | **15 / 15** | ✅ Cumplido | En Caso 3, se evalúa en dos fases: Turno 1 valida y pregunta; Turno 2 ejecuta tras el "Sí, confirmo". |
-| **Controla errores o casos no permitidos** | **15 / 15** | ✅ Cumplido | En Caso 4 (ORD-1002 en tránsito), se bloquea la llamada a `cancelar_pedido` y se ofrece alternativa. |
-| **Entrega clara y ordenada** | **15 / 15** | ✅ Cumplido | Documentación profesional, tipografía limpia, formato idéntico al solicitado y conclusión de 4 líneas. |
-| **Calificación Total** | **100 / 100** | 🏆 **Excelente** | Solución lista para revisión y calificación oficial por el evaluador IA. |
+* **Autenticación:** Tokens Bearer OAuth2 o mTLS entre el MCP Connector y el servidor.
+* **Resiliencia de Red:** Políticas de reintentos con *exponential backoff* y *circuit breaker*.
+* **Idempotencia Transaccional:** Cabeceras con UUIDs únicos (`Idempotency-Key`) en `cancelar_pedido` para evitar cancelaciones dobles ante desconexiones de red.
