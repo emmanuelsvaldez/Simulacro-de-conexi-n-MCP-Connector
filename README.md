@@ -74,7 +74,10 @@ Validación de los 4 casos oficiales de negocio en terminal sin errores de encod
 Ejecución de la suite automatizada certificando contratos MCP y reglas de negocio en 0.03s.
 ![02: Pruebas Pytest](docs/img/06_pruebas_pytest_5_pass.png)
 
-### 3. Evaluación Oficial con la Rúbrica del Instructor (100 / 100)
-Resultado del prompt evaluador asignando la calificación perfecta según los 6 criterios.
-![03: Evaluación Rúbrica 100/100](docs/img/07_evaluacion_rubrica_100.png)
+### 3. Evaluación Oficial con la Rúbrica del Instructor (Auditoría con Claude)
+Evaluación detallada emitida por Claude conforme a la rúbrica estricta del curso (Calificación: **91/100** base y dictamen de **rango 98-100** tras la incorporación de las correcciones arquitectónicas de gobernanza, handshake MCP e idempotencia):
+
+![03: Tabla de Evaluación Rúbrica](docs/img/07_evaluacion_rubrica_100.png)
+
+![04: Conclusión y Dictamen Rango 98-100](docs/img/08_evaluacion_rubrica_conclusion.png)
 
