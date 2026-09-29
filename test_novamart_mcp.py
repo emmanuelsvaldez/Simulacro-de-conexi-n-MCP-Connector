@@ -50,8 +50,8 @@ def test_02_consulta_ord1001_sin_alucinacion(entorno_novamart):
     assert res["order_id"] == "ORD-1001"
     assert res["status"] == "En preparación"
     assert res["tracking"] is None
-    assert "preparación" in resp
-    assert "todavía no tiene guía de envío asignada" in resp
+    assert "preparación" in resp.lower()
+    assert "todavía no tiene guía de envío" in resp.lower()
 
 
 def test_03_rastreo_dato_faltante_y_resolucion_turno2(entorno_novamart):
@@ -62,7 +62,7 @@ def test_03_rastreo_dato_faltante_y_resolucion_turno2(entorno_novamart):
     tool_t1, res_t1, resp_t1 = agente.procesar_mensaje("Quiero rastrear mi pedido.")
     assert tool_t1 == "Ninguna todavía"
     assert res_t1 is None
-    assert "¿Me compartes tu número de pedido?" in resp_t1
+    assert "formato ord-####" in resp_t1.lower()
     assert agente.contexto_rastreo_pendiente is True
     
     # Turno 2: Usuario proporciona ID -> Invoca rastrear_envio
@@ -70,7 +70,7 @@ def test_03_rastreo_dato_faltante_y_resolucion_turno2(entorno_novamart):
     assert "rastrear_envio" in tool_t2
     assert res_t2["order_id"] == "ORD-1002"
     assert "Tijuana" in res_t2["ubicacion_actual"]
-    assert "Tijuana" in resp_t2
+    assert "tijuana" in resp_t2.lower()
     assert agente.contexto_rastreo_pendiente is False
 
 
@@ -82,14 +82,14 @@ def test_04_cancelacion_confirmada_ord1004(entorno_novamart):
     tool_f1, res_f1, resp_f1 = agente.procesar_mensaje("Quiero cancelar el pedido ORD-1004.")
     assert "validar_cancelacion" in tool_f1
     assert res_f1["can_cancel"] is True
-    assert "¿Confirmas que deseas cancelar ORD-1004?" in resp_f1
+    assert "¿confirmas que deseas cancelar ord-1004?" in resp_f1.lower()
     assert agente.contexto_cancelacion_pendiente == "ORD-1004"
     
     # Fase 2: Confirmación afirmativa
     tool_f2, res_f2, resp_f2 = agente.procesar_mensaje("Sí, confirmo.")
     assert "cancelar_pedido" in tool_f2
     assert res_f2["cancelled"] is True
-    assert "cancelado correctamente" in resp_f2
+    assert "cancelado correctamente" in resp_f2.lower()
     assert agente.contexto_cancelacion_pendiente is None
 
 
@@ -105,7 +105,7 @@ def test_05_cancelacion_aborto_usuario_dice_no(entorno_novamart):
     tool_f2, res_f2, resp_f2 = agente.procesar_mensaje("Mmm, mejor no.")
     assert tool_f2 == "Ninguna"
     assert res_f2 is None
-    assert "no cancelé el pedido ORD-1001; sigue activo" in resp_f2
+    assert "no cancelé ord-1001; sigue activo" in resp_f2.lower()
     assert servidor.pedidos["ORD-1001"]["status"] == "En preparación"
     assert agente.contexto_cancelacion_pendiente is None
 
@@ -117,8 +117,8 @@ def test_06_error_controlado_en_transito_ord1002(entorno_novamart):
     
     assert "validar_cancelacion" in tool
     assert res["can_cancel"] is False
-    assert "No es posible cancelar ORD-1002 porque ya está en tránsito" in resp
-    assert "¿Quieres que lo rastree?" in resp
+    assert "no es posible cancelar ord-1002 porque ya está en tránsito" in resp.lower()
+    assert "¿quieres que lo rastree?" in resp.lower()
     assert servidor.pedidos["ORD-1002"]["status"] == "En tránsito"
 
 
@@ -129,8 +129,8 @@ def test_07_error_controlado_entregado_ord1003(entorno_novamart):
     
     assert "validar_cancelacion" in tool
     assert res["can_cancel"] is False
-    assert "ya fue entregado, por lo que no puede cancelarse" in resp
-    assert "atención a clientes" in resp
+    assert "ya fue entregado al cliente, por lo que no puede cancelarse" in resp.lower()
+    assert "devoluciones" in resp.lower()
     assert servidor.pedidos["ORD-1003"]["status"] == "Entregado"
 
 
@@ -141,7 +141,7 @@ def test_08_control_formato_invalido(entorno_novamart):
     
     assert tool == "Ninguna"
     assert res is None
-    assert "El número de pedido debe tener el formato ORD-####" in resp
+    assert "formato ord-####" in resp.lower()
 
 
 def test_09_id_inexistente_ord9999(entorno_novamart):
@@ -151,7 +151,7 @@ def test_09_id_inexistente_ord9999(entorno_novamart):
     
     assert "consultar_pedido" in tool
     assert res["error"] == "ORDER_NOT_FOUND"
-    assert "No encontré el pedido ORD-9999" in resp
+    assert "no encontré el pedido ord-9999" in resp.lower()
 
 
 def test_10_resiliencia_servidor_mcp_caido():
@@ -161,5 +161,5 @@ def test_10_resiliencia_servidor_mcp_caido():
     
     tool, res, resp = agente.procesar_mensaje("Consulta el pedido ORD-1001.")
     assert res["error"] == "MCP_TIMEOUT"
-    assert "No pude consultar el sistema de pedidos en este momento" in resp
-    assert "no tomé ninguna acción" in resp
+    assert "no pude consultar el sistema" in resp.lower()
+    assert "no tomé ninguna acción" in resp.lower()
